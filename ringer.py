@@ -5,6 +5,7 @@ import argparse
 import asyncio
 import base64
 import contextlib
+import errno
 import json
 import mimetypes
 import os
@@ -107,6 +108,7 @@ class EngineConfig:
     args_template: tuple[str, ...]
     full_access_args: tuple[str, ...]
     sandbox_args: tuple[str, ...]
+    pty: bool = False
     token_regex: str | None = DEFAULT_TOKEN_REGEX
     # Fills the {model} placeholder in args_template when a task does not set
     # its own "model" — this is what makes a harness engine (OpenCode) model
@@ -287,6 +289,7 @@ def built_in_codex_engine() -> EngineConfig:
         ),
         full_access_args=("--dangerously-bypass-approvals-and-sandbox",),
         sandbox_args=("--sandbox", "workspace-write"),
+        pty=False,
         token_regex=DEFAULT_TOKEN_REGEX,
     )
 
@@ -357,6 +360,12 @@ def load_engines(raw: Any) -> dict[str, EngineConfig]:
             section.get("sandbox_args", list(base.sandbox_args) if base else []),
             key=f"engines.{clean_name}.sandbox_args",
         )
+        if "pty" in section:
+            pty = section["pty"]
+            if not isinstance(pty, bool):
+                raise ValueError(f"engines.{clean_name}.pty must be a boolean")
+        else:
+            pty = base.pty if base else False
         token_regex = optional_string(section.get("token_regex"))
         if token_regex is None and base is not None:
             token_regex = base.token_regex
@@ -374,6 +383,7 @@ def load_engines(raw: Any) -> dict[str, EngineConfig]:
             args_template=args_template,
             full_access_args=full_access_args,
             sandbox_args=sandbox_args,
+            pty=pty,
             token_regex=token_regex,
             model_default=model_default,
         )
@@ -7100,7 +7110,8 @@ class RingerRunner:
             "\n"
             f"[ringer.py] attempt {attempt} started {datetime.now(timezone.utc).isoformat()}\n"
             f"[ringer.py] engine: {runtime.task.engine}\n"
-            f"[ringer.py] command: {shell_command_for_display(cmd)} < /dev/null\n",
+            f"[ringer.py] command: {shell_command_for_display(cmd)} "
+            f"{'(pty)' if engine.pty else '< /dev/null'}\n",
         )
         capture = RollingBytes(max_bytes=1_000_000)
         try:
@@ -7108,48 +7119,142 @@ class RingerRunner:
         except OSError as exc:
             return WorkerResult(returncode=None, timed_out=False, tokens=None, error=str(exc))
         async with AsyncFileCloser(log_fh):
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    cwd=str(runtime.taskdir),
-                    stdin=asyncio.subprocess.DEVNULL,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                    start_new_session=True,
-                )
-            except Exception as exc:
-                message = f"[ringer.py] worker spawn failed: {exc}\n"
-                log_fh.write(message.encode("utf-8", errors="replace"))
-                log_fh.flush()
-                return WorkerResult(returncode=None, timed_out=False, tokens=None, error=str(exc))
+            master_fd: int | None = None
+            slave_fd: int | None = None
+            if engine.pty:
+                try:
+                    master_fd, slave_fd = os.openpty()
+                    os.set_blocking(master_fd, False)
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        cwd=str(runtime.taskdir),
+                        stdin=slave_fd,
+                        stdout=slave_fd,
+                        stderr=slave_fd,
+                        start_new_session=True,
+                    )
+                except Exception as exc:
+                    if slave_fd is not None:
+                        with contextlib.suppress(OSError):
+                            os.close(slave_fd)
+                    if master_fd is not None:
+                        with contextlib.suppress(OSError):
+                            os.close(master_fd)
+                    message = f"[ringer.py] worker spawn failed: {exc}\n"
+                    log_fh.write(message.encode("utf-8", errors="replace"))
+                    log_fh.flush()
+                    return WorkerResult(returncode=None, timed_out=False, tokens=None, error=str(exc))
+                with contextlib.suppress(OSError):
+                    os.close(slave_fd)
+                slave_fd = None
+            else:
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        cwd=str(runtime.taskdir),
+                        stdin=asyncio.subprocess.DEVNULL,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                        start_new_session=True,
+                    )
+                except Exception as exc:
+                    message = f"[ringer.py] worker spawn failed: {exc}\n"
+                    log_fh.write(message.encode("utf-8", errors="replace"))
+                    log_fh.flush()
+                    return WorkerResult(returncode=None, timed_out=False, tokens=None, error=str(exc))
             with self.lock:
                 runtime.worker_pid = proc.pid
             self.active_processes[proc.pid] = proc
-            reader = asyncio.create_task(self._tee_stream(proc, log_fh, capture))
+            if engine.pty:
+                assert master_fd is not None
+                reader = asyncio.create_task(self._tee_fd(master_fd, log_fh, capture))
+            else:
+                reader = asyncio.create_task(self._tee_stream(proc, log_fh, capture))
             timed_out = False
             try:
-                await asyncio.wait_for(proc.wait(), timeout=runtime.task.timeout_s)
-            except asyncio.TimeoutError:
-                timed_out = True
-                terminate_process_group(proc)
-                try:
-                    await asyncio.wait_for(proc.wait(), timeout=5)
-                except asyncio.TimeoutError:
-                    kill_process_group(proc)
-                    await proc.wait()
-            try:
-                await asyncio.wait_for(reader, timeout=5)
-            except asyncio.TimeoutError:
-                reader.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await reader
-            self.active_processes.pop(proc.pid, None)
+                if engine.pty:
+                    timed_out = await self._wait_for_pty_worker(proc, runtime)
+                else:
+                    try:
+                        await asyncio.wait_for(proc.wait(), timeout=runtime.task.timeout_s)
+                    except asyncio.TimeoutError:
+                        timed_out = True
+                        await self._terminate_worker_process(proc)
+                await self._finish_worker_reader(reader)
+            finally:
+                self.active_processes.pop(proc.pid, None)
+                if master_fd is not None:
+                    with contextlib.suppress(OSError):
+                        os.close(master_fd)
         output_tail = capture.text()
         tokens = parse_token_count(output_tail, engine.token_regex)
         if timed_out:
             append_text(log_path, f"\n[ringer.py] worker timed out after {runtime.task.timeout_s}s\n")
         append_text(log_path, f"[ringer.py] attempt {attempt} exited rc={proc.returncode}\n")
         return WorkerResult(returncode=proc.returncode, timed_out=timed_out, tokens=tokens)
+
+    async def _wait_for_pty_worker(
+        self,
+        proc: asyncio.subprocess.Process,
+        runtime: TaskRuntime,
+    ) -> bool:
+        wait_task = asyncio.create_task(proc.wait())
+        deadline = asyncio.get_running_loop().time() + runtime.task.timeout_s
+        try:
+            while True:
+                if wait_task.done():
+                    return False
+                if runtime.task.expect_files and self._expect_files_ready(runtime):
+                    await self._terminate_worker_process(proc, wait_task=wait_task)
+                    return False
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    await self._terminate_worker_process(proc, wait_task=wait_task)
+                    return True
+                await asyncio.wait(
+                    {wait_task},
+                    timeout=min(0.1, remaining),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+        finally:
+            if not wait_task.done():
+                wait_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await wait_task
+
+    def _expect_files_ready(self, runtime: TaskRuntime) -> bool:
+        return all(
+            Verifier._is_nonempty_file(Verifier._expect_file_path(runtime.taskdir, path))
+            for path in runtime.task.expect_files
+        )
+
+    async def _terminate_worker_process(
+        self,
+        proc: asyncio.subprocess.Process,
+        *,
+        wait_task: asyncio.Task[int] | None = None,
+    ) -> None:
+        terminate_process_group(proc)
+        try:
+            if wait_task is None:
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            else:
+                await asyncio.wait_for(asyncio.shield(wait_task), timeout=5)
+            return
+        except asyncio.TimeoutError:
+            kill_process_group(proc)
+        if wait_task is None:
+            await proc.wait()
+        else:
+            await asyncio.shield(wait_task)
+
+    async def _finish_worker_reader(self, reader: asyncio.Task[None]) -> None:
+        try:
+            await asyncio.wait_for(reader, timeout=5)
+        except asyncio.TimeoutError:
+            reader.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reader
 
     async def _tee_stream(
         self,
@@ -7163,14 +7268,42 @@ class RingerRunner:
             chunk = await proc.stdout.read(4096)
             if not chunk:
                 return
-            log_fh.write(chunk)
-            log_fh.flush()
-            capture.extend(chunk)
+            self._tee_worker_bytes(chunk, log_fh, capture)
+
+    async def _tee_fd(
+        self,
+        fd: int,
+        log_fh: Any,
+        capture: "RollingBytes",
+    ) -> None:
+        while True:
             try:
-                sys.stdout.buffer.write(chunk)
-                sys.stdout.buffer.flush()
-            except Exception:
-                pass
+                chunk = os.read(fd, 4096)
+            except BlockingIOError:
+                await asyncio.sleep(0.02)
+                continue
+            except OSError as exc:
+                if exc.errno in {errno.EIO, errno.EBADF}:
+                    return
+                return
+            if not chunk:
+                return
+            self._tee_worker_bytes(chunk, log_fh, capture)
+
+    def _tee_worker_bytes(
+        self,
+        chunk: bytes,
+        log_fh: Any,
+        capture: "RollingBytes",
+    ) -> None:
+        log_fh.write(chunk)
+        log_fh.flush()
+        capture.extend(chunk)
+        try:
+            sys.stdout.buffer.write(chunk)
+            sys.stdout.buffer.flush()
+        except Exception:
+            pass
 
     def _log_attempt(
         self,
