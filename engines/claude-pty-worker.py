@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -48,6 +49,9 @@ def set_true(data: dict[str, Any], key: str) -> bool:
     return True
 
 
+# Seed idempotently without restoring: these flags are harmless/already true on
+# signed-in machines, the per-project entry is additive, and Ringer
+# process-group-kills the worker so a restore-after step could not run reliably.
 def seed_claude_trust(cwd: Path) -> None:
     config_path = Path.home() / ".claude.json"
     data = load_claude_config(config_path)
@@ -90,6 +94,37 @@ def seed_claude_trust(cwd: Path) -> None:
         raise
 
 
+def write_stop_hook_settings(cwd: Path, done_sentinel: str) -> Path:
+    sentinel_path = Path(done_sentinel).expanduser().resolve()
+    settings_path = cwd / ".claude-pty-settings.json"
+    script = f":> {shlex.quote(str(sentinel_path))}"
+    settings = {
+        "hooks": {
+            "Stop": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": f"/bin/sh -c {shlex.quote(script)}",
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+    tmp_path = settings_path.with_name(settings_path.name + ".tmp")
+    try:
+        with tmp_path.open("w", encoding="utf-8") as fh:
+            json.dump(settings, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+        os.replace(tmp_path, settings_path)
+    except Exception as exc:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise RuntimeError(f"failed to write Stop hook settings: {exc}") from exc
+    return settings_path.resolve()
+
+
 def resolve_claude_bin(env: dict[str, str]) -> str:
     requested = os.environ.get("CLAUDE_PTY_BIN", "claude")
     if os.sep in requested:
@@ -107,8 +142,12 @@ def main(argv: list[str]) -> int:
 
     prompt = argv[1]
     env = child_env()
+    settings_path = None
     try:
         seed_claude_trust(Path.cwd())
+        done_sentinel = os.environ.get("RINGER_DONE_SENTINEL")
+        if done_sentinel:
+            settings_path = write_stop_hook_settings(Path.cwd(), done_sentinel)
         claude_bin = resolve_claude_bin(env)
     except RuntimeError as exc:
         print(f"claude-pty-worker: {exc}", file=sys.stderr)
@@ -122,6 +161,8 @@ def main(argv: list[str]) -> int:
         "--allowedTools",
         "Write",
     ]
+    if settings_path is not None:
+        args.extend(["--settings", str(settings_path)])
     try:
         os.execvpe(claude_bin, args, env)
     except OSError as exc:

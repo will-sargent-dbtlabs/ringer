@@ -7123,6 +7123,9 @@ class RingerRunner:
             slave_fd: int | None = None
             if engine.pty:
                 try:
+                    done_sentinel = runtime.taskdir / ".ringer_done"
+                    with contextlib.suppress(FileNotFoundError):
+                        done_sentinel.unlink()
                     master_fd, slave_fd = os.openpty()
                     os.set_blocking(master_fd, False)
                     proc = await asyncio.create_subprocess_exec(
@@ -7132,6 +7135,7 @@ class RingerRunner:
                         stdout=slave_fd,
                         stderr=slave_fd,
                         start_new_session=True,
+                        env={**os.environ, "RINGER_DONE_SENTINEL": str(done_sentinel.resolve())},
                     )
                 except Exception as exc:
                     if slave_fd is not None:
@@ -7199,10 +7203,14 @@ class RingerRunner:
         runtime: TaskRuntime,
     ) -> bool:
         wait_task = asyncio.create_task(proc.wait())
+        done_sentinel = runtime.taskdir / ".ringer_done"
         deadline = asyncio.get_running_loop().time() + runtime.task.timeout_s
         try:
             while True:
                 if wait_task.done():
+                    return False
+                if done_sentinel.exists():
+                    await self._terminate_worker_process(proc, wait_task=wait_task)
                     return False
                 if runtime.task.expect_files and self._expect_files_ready(runtime):
                     await self._terminate_worker_process(proc, wait_task=wait_task)

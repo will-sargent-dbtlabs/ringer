@@ -109,9 +109,10 @@ token_regex = "tokens\\s+used\\s*:?\\s*([0-9][0-9,]*)"
 
 # Claude Code PTY worker. This uses your interactive Claude Code subscription
 # login rather than API-key auth: Max/Pro are flat-rate plan dependent, while
-# Enterprise can still meter. PTY tasks must declare expect_files; Ringer uses
-# those non-empty files as the completion signal because interactive Claude does
-# not necessarily exit after a turn.
+# Enterprise can still meter. The worker registers a Claude Stop hook that
+# writes Ringer's RINGER_DONE_SENTINEL file at turn end, so PTY tasks do not
+# need an expect_files deliverable just to finish. Child exit, non-empty
+# expect_files, and timeout still apply as completion paths.
 # Uncomment and set an absolute path for `bin` to enable.
 # [engines.claude-pty]
 # bin = "/absolute/path/to/ringer/engines/claude-pty-worker.py"

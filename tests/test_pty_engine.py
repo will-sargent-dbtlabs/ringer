@@ -62,10 +62,45 @@ if __name__ == "__main__":
 """
 
 
+SENTINEL_WORKER = r"""
+from __future__ import annotations
+
+import os
+import sys
+import time
+from pathlib import Path
+
+
+def main(argv: list[str]) -> int:
+    if not os.isatty(0):
+        print("sentinel-worker: stdin is not a tty", file=sys.stderr, flush=True)
+        return 7
+    done_sentinel = os.environ.get("RINGER_DONE_SENTINEL")
+    if not done_sentinel:
+        print("sentinel-worker: missing RINGER_DONE_SENTINEL", file=sys.stderr, flush=True)
+        return 8
+    target = Path(done_sentinel)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("done\n", encoding="utf-8")
+    print(f"sentinel-worker: wrote {done_sentinel}", flush=True)
+    while True:
+        time.sleep(1)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
+"""
+
+
 class PtyEngineEndToEndTests(unittest.TestCase):
     def write_faketty_worker(self, root: Path) -> Path:
         worker_path = root / "faketty_worker.py"
         worker_path.write_text(textwrap.dedent(FAKETTY_WORKER).lstrip(), encoding="utf-8")
+        return worker_path
+
+    def write_sentinel_worker(self, root: Path) -> Path:
+        worker_path = root / "sentinel_worker.py"
+        worker_path.write_text(textwrap.dedent(SENTINEL_WORKER).lstrip(), encoding="utf-8")
         return worker_path
 
     def write_config(self, root: Path, worker_path: Path) -> Path:
@@ -95,6 +130,36 @@ class PtyEngineEndToEndTests(unittest.TestCase):
                     "[engines.faketty-no-pty]",
                     f"bin = {toml_string(sys.executable)}",
                     "pty = false",
+                    "args_template = [",
+                    f"  {toml_string(worker_path)},",
+                    '  "{spec}",',
+                    "]",
+                    "sandbox_args = []",
+                    "full_access_args = []",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return config_path
+
+    def write_sentinel_config(self, root: Path, worker_path: Path) -> Path:
+        config_path = root / "sentinel-config.toml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    f"state_dir = {toml_string(root / 'state')}",
+                    "",
+                    "[eval]",
+                    'backend = "jsonl"',
+                    f"jsonl_path = {toml_string(root / 'runs.jsonl')}",
+                    "",
+                    "[artifact]",
+                    "enabled = false",
+                    "",
+                    "[engines.sentinel-pty]",
+                    f"bin = {toml_string(sys.executable)}",
+                    "pty = true",
                     "args_template = [",
                     f"  {toml_string(worker_path)},",
                     '  "{spec}",',
@@ -157,6 +222,29 @@ class PtyEngineEndToEndTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def write_sentinel_manifest(self, path: Path, workdir: Path) -> None:
+        path.write_text(
+            json.dumps(
+                {
+                    "run_name": "sentinel-run",
+                    "workdir": str(workdir),
+                    "max_parallel": 1,
+                    "worktrees": False,
+                    "tasks": [
+                        {
+                            "key": "sentinel-task",
+                            "engine": "sentinel-pty",
+                            "spec": "write the done sentinel and then keep running",
+                            "check": "true",
+                            "timeout_s": 5,
+                        }
+                    ],
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
     def test_pty_engine_completes_on_expect_files_and_non_pty_variant_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temp_root:
             root = Path(temp_root)
@@ -210,6 +298,40 @@ class PtyEngineEndToEndTests(unittest.TestCase):
             )
             self.assertIn("< /dev/null", nonpty_log)
             self.assertIn("faketty-worker: stdin is not a tty", nonpty_log)
+
+    def test_pty_engine_completes_on_done_sentinel_without_deliverables(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_root:
+            root = Path(temp_root)
+            home = root / "home"
+            ringer_home = root / "ringer-home"
+            home.mkdir()
+            ringer_home.mkdir()
+            worker_path = self.write_sentinel_worker(root)
+            config_path = self.write_sentinel_config(root, worker_path)
+
+            env = os.environ.copy()
+            env["HOME"] = str(home)
+            env["RINGER_HOME"] = str(ringer_home)
+            env["XDG_CONFIG_HOME"] = str(root / "xdg-config")
+
+            manifest_path = root / "sentinel-manifest.json"
+            workdir = root / "work-sentinel"
+            self.write_sentinel_manifest(manifest_path, workdir)
+
+            proc = self.run_ringer(manifest_path, config_path, env)
+            output = proc.stdout + proc.stderr
+            self.assertEqual(0, proc.returncode, output)
+            self.assertRegex(
+                output,
+                re.compile(r"^sentinel-task\s+pass\s+PASS\s+1\s+", re.MULTILINE),
+                output,
+            )
+            taskdir = workdir / "sentinel-task"
+            sentinel_log = (taskdir / "worker.log").read_text(encoding="utf-8")
+            self.assertIn("(pty)", sentinel_log)
+            self.assertIn("sentinel-worker: wrote", sentinel_log)
+            self.assertNotIn("worker timed out", sentinel_log)
+            self.assertTrue((taskdir / ".ringer_done").exists())
 
 
 if __name__ == "__main__":
