@@ -35,7 +35,10 @@ Executed-verified there (via Ringer probes):
 - `pty.fork()` works under the codex `workspace-write` sandbox; only network forces
   `full_access`.
 
-Prototype (proof-pending): two-way, multi-turn sessions with `--resume`.
+Also executed-verified: **two-way, multi-turn sessions with `--resume`** — a token
+planted in turn 1 was recalled after a cold `--resume` into a fresh process in turn
+2 (turn 2's prompt never held the token), still keyless. Ran via
+`proof/manifests/two-way-resume.json`.
 
 ## How it would land in ringer
 
