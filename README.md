@@ -196,7 +196,7 @@ Route with per-task `"engine": "grok"` and pick the model with `"model": "grok-b
 
 ### The subscription lane: Claude Code via PTY (in progress)
 
-Claude Code can be a third flat-rate lane, but it can't join the closed-stdin subprocess model without losing its subscription subsidy — interactive `claude` bills as `cc_entrypoint=cli` (Max/Pro-subsidized) while `claude -p` does not. That needs a **PTY execution path**, not just a config block. The pattern and its reference implementation (env scrubbing, trust-dialog seeding, prompt-answering, sentinel-based completion) are proven and spun out to **[`will-sargent-dbtlabs/claude-pty`](https://github.com/will-sargent-dbtlabs/claude-pty)**; the ringer-side engine design, the four-invariant reconciliation, and where it hooks into `ringer.py` are written up in [`docs/claude-pty.md`](docs/claude-pty.md).
+Claude Code can be a subscription lane, but it can't join the closed-stdin subprocess model on subscription auth — interactive `claude` uses the keyless `cc_entrypoint=cli` path while `claude -p` does not. That needs a **PTY execution path**, not just a config block. The pattern and its reference implementation (env scrubbing, trust-dialog seeding, prompt-answering, sentinel-based completion) are proven and spun out to **[`will-sargent-dbtlabs/claude-pty`](https://github.com/will-sargent-dbtlabs/claude-pty)**; the ringer-side engine design, the four-invariant reconciliation, and where it hooks into `ringer.py` are written up in [`docs/claude-pty.md`](docs/claude-pty.md). Note it's only flat-rate on **Max/Pro** — an **Enterprise** seat uses the same keyless PTY path but still bills per-token at enterprise rates, so it's not a consequence-free lane.
 
 ## Ringside — mission control
 

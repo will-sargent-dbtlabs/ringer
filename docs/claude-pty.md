@@ -1,12 +1,23 @@
 # Claude Code as a subscription worker lane (PTY) — design & status
 
 Ringer's worker lanes are all fire-and-forget subprocesses with **stdin closed**.
-Claude Code can't join that way without giving up its subscription subsidy:
-interactive `claude` bills as `cc_entrypoint=cli` (subsidized by a Max/Pro plan),
-while `claude -p`/`--print` — the only mode that fits the closed-stdin model —
-loses that subsidy. Subscription billing requires the interactive TUI, which
-requires a real terminal. So a Claude lane needs a **PTY execution path**, not just
-a config block.
+Claude Code can't join that way on subscription auth: interactive `claude` bills as
+`cc_entrypoint=cli` (the keyless, OAuth-sign-in path), while `claude -p`/`--print` —
+the only mode that fits the closed-stdin model — takes a different, API-key-shaped
+path. The keyless interactive path requires the TUI, which requires a real terminal.
+So a Claude lane needs a **PTY execution path**, not just a config block.
+
+> **A PTY is not automatically "free." Billing depends on the plan.** Driving
+> `claude` interactively buys you *keyless subscription auth* — whether that is
+> flat-rate is a property of the **account**, not the transport:
+> - **Max/Pro** — flat rate against time-based session limits (the
+>   all-you-can-eat-within-limits story). This is the case where a PTY swarm has no
+>   per-token bill.
+> - **Enterprise** — the *same* keyless sign-in, and it *also* requires the
+>   interactive/PTY path (API keys are disallowed), **but still incurs per-token
+>   cost at enterprise rates.** A swarm on an Enterprise seat is *not*
+>   consequence-free — `cc_entrypoint=cli` is an entry-path tag, not a zero-cost
+>   guarantee. Meter accordingly.
 
 ## Status
 
