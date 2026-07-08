@@ -107,6 +107,22 @@ token_regex = "tokens\\s+used\\s*:?\\s*([0-9][0-9,]*)"
 # sandbox_args = []
 # full_access_args = []
 
+# Claude Code PTY worker. This uses your interactive Claude Code subscription
+# login rather than API-key auth: Max/Pro are flat-rate plan dependent, while
+# Enterprise can still meter. PTY tasks must declare expect_files; Ringer uses
+# those non-empty files as the completion signal because interactive Claude does
+# not necessarily exit after a turn.
+# Uncomment and set an absolute path for `bin` to enable.
+# [engines.claude-pty]
+# bin = "/absolute/path/to/ringer/engines/claude-pty-worker.py"
+# pty = true
+# args_template = [
+#   "{spec}",
+# ]
+# sandbox_args = []
+# full_access_args = []
+# token_regex = "tokens\\s+used\\s*:?\\s*([0-9][0-9,]*)"
+
 # OpenCode + OpenRouter — the universal model harness. One engine block runs
 # ANY OpenRouter-served model: the {model} placeholder is filled per task from
 # the manifest's "model" field, falling back to model_default below. Example
