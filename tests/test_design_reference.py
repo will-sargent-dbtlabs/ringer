@@ -12,10 +12,9 @@ sys.path.insert(0, str(ROOT))
 
 from ringer import ARTIFACT_BASE_CSS, ArtifactRenderer, render_final_report_html, render_status_html  # noqa: E402
 
-REFERENCE = Path(
-    "/private/tmp/claude-501/-Users-jonathanedwards-WORKSPACE-20-CLIENTS-NATE-10-ACTIVE-SYSTEMS-ringer-system/"
-    "d4e72b45-c6bd-4928-aaf0-4e3552eb8f04/scratchpad/design-bake/design-reference.html"
-)
+# Committed golden file pinning the artifact design tokens; when
+# ARTIFACT_BASE_CSS changes intentionally, regenerate it.
+REFERENCE = ROOT / "tests" / "fixtures" / "design-reference.html"
 
 
 def css_block(css: str, selector: str) -> str:
