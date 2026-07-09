@@ -157,9 +157,9 @@ def main(argv: list[str]) -> int:
         claude_bin,
         prompt,
         "--permission-mode",
-        "acceptEdits",
-        "--allowedTools",
-        "Write",
+        "bypassPermissions",
+        "--model",
+        "sonnet",
     ]
     if settings_path is not None:
         args.extend(["--settings", str(settings_path)])
