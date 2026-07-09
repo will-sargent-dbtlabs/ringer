@@ -124,6 +124,27 @@ token_regex = "tokens\\s+used\\s*:?\\s*([0-9][0-9,]*)"
 # full_access_args = []
 # token_regex = "tokens\\s+used\\s*:?\\s*([0-9][0-9,]*)"
 
+# Claude Code HEADLESS worker (claude -p). Reliable Sonnet lane / fallback to the
+# interactive PTY: headless -p has no TUI, so it cannot hang on a permission gate;
+# child exit is the completion signal (no Stop-hook needed). Same keyless
+# subscription auth via env scrub in the worker. Enterprise can still meter.
+# NOTE: two operational constraints (see docs/MODEL-NOTES.md):
+#   1. Run Ringer with a workdir OUTSIDE ~/.claude (Claude guards its config dir,
+#      blocking writes there — this manifests as a PTY hang / a -p hard-deny).
+#   2. Claude confines Read/Bash to the task cwd; grant extra readable dirs by
+#      exporting RINGER_CLAUDE_ADD_DIRS=/abs/dir1:/abs/dir2 before `ringer.py run`
+#      (both claude workers translate it into `--add-dir`). Tasks reach Anthropic,
+#      so set "full_access": true on them.
+# Uncomment and set an absolute path for `bin` to enable.
+# [engines.claude-print]
+# bin = "/absolute/path/to/ringer/engines/claude-print-worker.py"
+# args_template = [
+#   "{spec}",
+# ]
+# sandbox_args = []
+# full_access_args = []
+# token_regex = "tokens\\s+used\\s*:?\\s*([0-9][0-9,]*)"
+
 # OpenCode + OpenRouter — the universal model harness. One engine block runs
 # ANY OpenRouter-served model: the {model} placeholder is filled per task from
 # the manifest's "model" field, falling back to model_default below. Example
