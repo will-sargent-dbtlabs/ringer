@@ -1,0 +1,28 @@
+{
+  "run_name": "{{JOB_NAME}}-claim-audit",
+  "workdir": "{{WORKDIR}}",
+  "max_parallel": 2,
+  "tasks": [
+    {
+      "key": "audit-codex",
+      "task_type": "analysis-audit",
+      "engine": "codex",
+      "spec": "You are an independent data auditor. Your job is to INDEPENDENTLY recompute a set of published figures from raw data and report what you get — you are checking someone else's analysis, so do not trust or read their conclusions. Boundary: READ-ONLY. Read only the source files listed below; write only ./audit.json in your current task directory; never edit any repo, never touch the network. SOURCE FILES (absolute paths, read-only): {{SOURCE_FILES}}. FIGURES TO RECOMPUTE (compute each yourself from the sources named; do not copy from any report): {{FIGURE_SPEC}}. OUTPUT CONTRACT: write ./audit.json — a single JSON object with EXACTLY these keys and JSON number/string values (no prose, no extra keys): {{OUTPUT_KEYS}}. Nested keys must be nested objects exactly as shown. Honesty rules: compute every figure from the named source file; if a source is missing or a figure cannot be computed, set that key to null and do NOT guess — a null that fails the check honestly beats a fabricated match.",
+      "check": "python3 '{{CHECK_SCRIPT_PATH — absolute path to templates/report-claim-audit/checks/claim_audit_check.py}}' --audit audit.json --truth-cmd '{{TRUTH_CMD — command that prints authoritative truth JSON, e.g. python3 /abs/path/truth_recompute.py}}'",
+      "expect_files": ["audit.json"],
+      "timeout_s": 900,
+      "verified": "worker's independently recomputed figures match an authoritative recompute on every audited key"
+    },
+    {
+      "key": "audit-sonnet",
+      "task_type": "analysis-audit",
+      "engine": "claude-pty",
+      "full_access": true,
+      "spec": "You are an independent data auditor. Your job is to INDEPENDENTLY recompute a set of published figures from raw data and report what you get — you are checking someone else's analysis, so do not trust or read their conclusions. Boundary: READ-ONLY. Read only the source files listed below; write only ./audit.json in your current task directory; never edit any repo. SOURCE FILES (absolute paths, read-only): {{SOURCE_FILES}}. FIGURES TO RECOMPUTE (compute each yourself from the sources named; do not copy from any report): {{FIGURE_SPEC}}. OUTPUT CONTRACT: write ./audit.json — a single JSON object with EXACTLY these keys and JSON number/string values (no prose, no extra keys): {{OUTPUT_KEYS}}. Nested keys must be nested objects exactly as shown. Honesty rules: compute every figure from the named source file; if a source is missing or a figure cannot be computed, set that key to null and do NOT guess.",
+      "check": "python3 '{{CHECK_SCRIPT_PATH — absolute path to templates/report-claim-audit/checks/claim_audit_check.py}}' --audit audit.json --truth-cmd '{{TRUTH_CMD — command that prints authoritative truth JSON, e.g. python3 /abs/path/truth_recompute.py}}'",
+      "expect_files": ["audit.json"],
+      "timeout_s": 1200,
+      "verified": "worker's independently recomputed figures match an authoritative recompute on every audited key"
+    }
+  ]
+}
