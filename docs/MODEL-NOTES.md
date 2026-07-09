@@ -73,6 +73,17 @@ checks — see templates `report-claim-audit`, `analysis-with-recompute-check`, 
   gaps a compile check never would. Fixture-seeded collector tests (Codex
   delta-not-cumulative, Claude message-id dedup, UTC->local day rollback) gave
   that lane a clean first-try target.
+- 2026-07-09 — advanced-token-tracker rounds 3-5 (periods+budgets; actual-spend
+  pins + self-calibrating cost; Today/This-week/custom-range + per-model trend
+  lines): three more serial swarms, ~8 lanes, all substantive work first-try.
+  Two phantom retries, both CHECK-QUALITY not worker defects: (a) round-2 server
+  needed the smoke to exercise the real /collect path; (b) round-5 required-text
+  demanded a literal `window_start` that only lived as a struct JSON tag in a
+  non-owned file — main.go references the Go field `WindowStart`. Lesson:
+  required-text must match a token that naturally appears in the OWNED file.
+  Compounding schema wins: "plot per-model" needed zero backend because the
+  round-2 rollup already emitted daily by_model. Same run_name across 5 rounds =
+  one artifact the human watched evolve.
 
 - 2026-07-06 — elsas-website demo: Next.js scaffold PASSED attempt 2 (682s,
   ~354k tok) — attempt 1 built a complete homepage and silently skipped the
@@ -310,4 +321,9 @@ checks — see templates `report-claim-audit`, `analysis-with-recompute-check`, 
 - 2/2 first-try PASS on a `report-claim-audit` run: two independent codex auditors each recomputed 8 published report figures from raw JSON dumps and both matched an authoritative recompute exactly (~22k tokens, 36–57s each). The executed recompute check (`claim_audit_check.py --truth-cmd`) is the verifier; two workers agreeing = the cross-check. Recompute-check pattern works well for consulting/analysis deliverables, not just code.
 
 ## claude-pty (Sonnet subscription PTY)
-- 2026-07-09 — audition (one-task probe, "write ok.txt = READY") FAILED: TIMEOUT, 2 attempts, 604s. Raw log: the PTY launched interactive Claude Code and hit a "Do you want to create ok.txt?" **permission prompt**; stdin is closed on Ringer workers, so it could not answer and hung to timeout. Also launched **Opus 4.8 on a Claude Enterprise seat** (per-token metered, not flat-rate) rather than Sonnet. Verdict: wired but NOT usable as-is — the worker must launch `claude` with permissions bypassed (e.g. `--permission-mode bypassPermissions`/`--dangerously-skip-permissions`) so file writes don't prompt, and should pin the model to Sonnet. Fix in the claude-pty worker before retrying; don't re-run the probe blindly.
+- 2026-07-09 — **RESOLVED: viable.** Probe PASS attempt 1, 9.3s, keyless Sonnet, once the workdir was moved OUT of `~/.claude`.
+- 2026-07-09 (root cause) — the earlier "permission-prompt hang" (2× TIMEOUT, 604s) was **NOT fundamentally a permission-mode problem**: the Ringer workdir sat under `~/.claude/jobs/.../tmp`, and **Claude Code guards `~/.claude` as its config dir** — every file write there is blocked as "sensitive", which the interactive PTY surfaces as an un-dismissable prompt (headless `-p` hard-denies the same thing). Fix that actually mattered: **run Ringer with a workdir outside `~/.claude`** (e.g. `~/ringer-work`). The worker also now uses `--permission-mode bypassPermissions` + `--model sonnet` (committed) — good hygiene, and it launched Opus/Enterprise before the sonnet pin.
+- Constraint (both Claude lanes): Claude confines **Read/Bash to the task cwd**. Cross-directory analysis tasks fail ("cannot access files outside working directory") unless you `--add-dir` the source root or stage inputs in-cwd. Codex reads everywhere; Claude does not. Surfaced by a 4-way concurrent claim-audit stress test (4/4 failed on read-confinement, no hangs).
+
+## claude-print (headless `claude -p`, Sonnet)
+- 2026-07-09 — **viable.** Probe PASS attempt 1, ~14s, **keyless subscription auth confirmed on an Enterprise seat** (no API key — validates that `-p` does not force the API-key path on Enterprise). Reliable fallback to the PTY: no TUI, so it cannot hang on a permission gate; child-exit is the completion signal. Same cwd read-confinement constraint as claude-pty (needs `--add-dir` for cross-dir reads). Engine: `engines/claude-print-worker.py` (bin must be `chmod +x`).
