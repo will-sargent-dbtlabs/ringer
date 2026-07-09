@@ -12,6 +12,21 @@ ringer skill), append one dated line under the model. Say the task type,
 what happened, and what you'd do differently. Only write what the executed
 checks and raw logs support — no vibes, no worker self-reports.
 
+## Engine policy (this org)
+
+Worker lanes for our work are **codex** and **claude-pty (Sonnet)** only.
+
+- **codex** — default strong worker (sandboxed).
+- **claude-pty** — the Sonnet lane; PTY subscription worker. Its task needs `"full_access": true`
+  (it calls Anthropic), and config `allow_full_access = true`. Enable via `[engines.claude-pty]`
+  in `~/.config/ringer/config.toml` (`bin = <repo>/engines/claude-pty-worker.py`, `pty = true`).
+- **OFF-LIMITS: `opencode`/OpenRouter (incl. GLM) and `grok`** — do not route our workers through
+  them. (Directive, Will 2026-07-09.) If a future need arises, re-confirm before using.
+
+Pattern preference: high-level model (Opus) plans, writes specs + executable checks, and reviews;
+codex/claude-pty workers type and cross-check. Analysis/consulting work uses executed *recompute*
+checks — see templates `report-claim-audit`, `analysis-with-recompute-check`, `data-investigation`.
+
 ## codex (GPT-5-class, own harness)
 
 - Strongest general worker; the default engine. Spend reasoning effort per
@@ -37,6 +52,27 @@ checks and raw logs support — no vibes, no worker self-reports.
   recorded attempt 2 because of the expect_files-before-check harness bug
   (see process lessons). Heavy single-file feature work against an exact
   behavioral contract is squarely codex's lane.
+- 2026-07-08 — advanced-token-tracker (Go embedded-server dashboard ported
+  from a Next.js skill): 3-lane serial repo-feature swarm (data+math /
+  frontend / server+launchd-autostart) on one shared checkout, 3/3 passed on
+  attempt 1 (~57k / ~60k / ~44k tok). Seeding the shared type contract +
+  failing contract tests in a committed skeleton, then giving each lane
+  disjoint file ownership + an executed check, kept coupled Go code coherent
+  without worktrees. NOTE: the codex workspace-write sandbox blocks binding
+  even 127.0.0.1 (`operation not permitted`), so a socket-boot smoke test must
+  live in the CHECK (ringer runs it unsandboxed), never as the worker's own
+  self-verification — the server lane self-reported the curl as blocked yet
+  the lane passed because the check booted+curled it.
+- 2026-07-09 — advanced-token-tracker round 2 (per-model schema rework + real
+  local-log collector + editable pricing): 4-lane serial swarm; analytics /
+  collector / frontend all first-try (~48k / ~64k / ~101k tok); server lane
+  PASSED attempt 2 (~120k tok, 3083s) — attempt 1 shipped an incomplete
+  `collect --out` CLI so the smoke test's real-log collection wrote no file and
+  the executed check caught it, attempt 2 fixed the flag. Reinforces: a smoke
+  check that exercises the REAL data path (not just build) catches CLI/wiring
+  gaps a compile check never would. Fixture-seeded collector tests (Codex
+  delta-not-cumulative, Claude message-id dedup, UTC->local day rollback) gave
+  that lane a clean first-try target.
 
 - 2026-07-06 — elsas-website demo: Next.js scaffold PASSED attempt 2 (682s,
   ~354k tok) — attempt 1 built a complete homepage and silently skipped the
@@ -269,3 +305,9 @@ checks and raw logs support — no vibes, no worker self-reports.
 ## codex (2026-07-06, bench-operator-proofing)
 - 8/8 code-feature tasks passed attempt 1 across 3 rounds (worktrees mode, Python harness refactor; 108k-406k tokens/task). Specs embedded the approved architecture doc + exact file ownership; checks built fresh uv venvs and ran the full pytest suite.
 - Lesson (check design, not model): all 3 post-integration bugs were invisible to the checks — a test that passed only because the worker's worktree lacked .env, a `--help`-only assertion missing a runtime importlib/sys.modules bug (py3.12 dataclasses), and bare console-script names failing outside activated venvs. Checks should exercise one real invocation from a cold shell, not just --help.
+
+## codex (2026-07-09, analysis-audit — Nordstrom SAO engagement)
+- 2/2 first-try PASS on a `report-claim-audit` run: two independent codex auditors each recomputed 8 published report figures from raw JSON dumps and both matched an authoritative recompute exactly (~22k tokens, 36–57s each). The executed recompute check (`claim_audit_check.py --truth-cmd`) is the verifier; two workers agreeing = the cross-check. Recompute-check pattern works well for consulting/analysis deliverables, not just code.
+
+## claude-pty (Sonnet subscription PTY)
+- 2026-07-09 — audition (one-task probe, "write ok.txt = READY") FAILED: TIMEOUT, 2 attempts, 604s. Raw log: the PTY launched interactive Claude Code and hit a "Do you want to create ok.txt?" **permission prompt**; stdin is closed on Ringer workers, so it could not answer and hung to timeout. Also launched **Opus 4.8 on a Claude Enterprise seat** (per-token metered, not flat-rate) rather than Sonnet. Verdict: wired but NOT usable as-is — the worker must launch `claude` with permissions bypassed (e.g. `--permission-mode bypassPermissions`/`--dangerously-skip-permissions`) so file writes don't prompt, and should pin the model to Sonnet. Fix in the claude-pty worker before retrying; don't re-run the probe blindly.

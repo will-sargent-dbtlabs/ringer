@@ -1,0 +1,17 @@
+{
+  "run_name": "{{ANALYSIS_NAME}}-analysis",
+  "workdir": "{{WORKDIR}}",
+  "max_parallel": 2,
+  "tasks": [
+    {
+      "key": "{{ANALYSIS_KEY}}",
+      "task_type": "analysis",
+      "engine": "{{ENGINE — codex (default) or claude-pty}}",
+      "spec": "You are a data analyst. Answer this question from raw data and make your work reproducible: {{ANALYSIS_QUESTION}}. Boundary: read only the source files below; write only ./analysis.py, ./result.json, and ./findings.md in your current task directory; never edit any repo or touch the network beyond reading files. SOURCE FILES (absolute, read-only): {{SOURCE_FILES}}. HOW TO RUN: write ./analysis.py that reads the sources and computes the answer, and running `python3 analysis.py` must write ./result.json (machine-readable, keys: {{RESULT_KEYS}}) and print nothing required. Then write ./findings.md interpreting result.json for a human (<=600 words). OUTPUT CONTRACT: analysis.py is deterministic (same inputs -> same result.json); result.json contains {{RESULT_KEYS}}; findings.md every quantitative claim traces to a key in result.json. Honesty rules: do not hardcode answers in result.json — it must be produced by running analysis.py; if the data can't answer it, say so in findings.md and set the key null.",
+      "check": "bash -lc \"python3 analysis.py && python3 '{{ASSERT_SCRIPT — absolute path to a validator that re-runs/loads result.json and asserts invariants, printing WHY on failure}}' result.json\"",
+      "expect_files": ["analysis.py", "result.json", "findings.md"],
+      "timeout_s": 1200,
+      "verified": "the analysis script re-runs and reproduces result.json, and the invariant validator passes"
+    }
+  ]
+}

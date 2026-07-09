@@ -1,0 +1,18 @@
+{
+  "run_name": "{{INVESTIGATION_NAME}}-investigation",
+  "workdir": "{{WORKDIR}}",
+  "max_parallel": 1,
+  "tasks": [
+    {
+      "key": "{{STEP_KEY}}",
+      "task_type": "research",
+      "engine": "{{ENGINE — codex (default) or claude-pty}}",
+      "full_access": "{{FULL_ACCESS — true only if the step must reach the network/an API; else omit}}",
+      "spec": "You are a read-only investigation scout answering ONE question in a larger investigation: {{STEP_QUESTION}}. Boundary: read-only — read the sources below and write only ./finding.json and ./finding.md in your current task directory; never edit any repo. If the step must call an API, use exactly these commands: {{HOW_TO_RUN — exact command lines incl. how to load credentials, e.g. `set -a; source ~/.dbt/<cust>.env; set +a` then the pull}}. SOURCES (absolute, read-only): {{SOURCE_FILES_OR_ENDPOINTS}}. OUTPUT CONTRACT: ./finding.json with keys {{FINDING_KEYS}} (machine-checkable), and ./finding.md (<=500 words) where every claim traces to a key in finding.json. Honesty rules: report what the data shows even if inconclusive; set a key null rather than guess; state assumptions explicitly.",
+      "check": "python3 '{{ASSERT_SCRIPT — absolute path to a validator asserting this step's invariants against finding.json, printing WHY on failure}}' finding.json",
+      "expect_files": ["finding.json", "finding.md"],
+      "timeout_s": 1200,
+      "verified": "the step's finding.json exists and passes the step's invariant validator"
+    }
+  ]
+}
