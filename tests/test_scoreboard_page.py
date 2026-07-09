@@ -30,6 +30,8 @@ from ringer import (  # noqa: E402
     run_models_command,
 )
 
+GENERATED_AT = "2026-07-06T12:00:00+00:00"
+
 
 def catalog_model(model_id: str, *, prompt: str, completion: str, ctx: int = 64000) -> dict[str, object]:
     return {
@@ -236,10 +238,24 @@ class ScoreboardPageTests(unittest.TestCase):
             json=False,
         )
 
+    def run_models(self, args: argparse.Namespace) -> int:
+        original = ringer.render_model_scoreboard_html
+
+        def render_with_fixed_generated_at(**kwargs: object) -> str:
+            kwargs["generated_at"] = GENERATED_AT
+            return original(**kwargs)
+
+        with mock.patch.object(
+            ringer,
+            "render_model_scoreboard_html",
+            side_effect=render_with_fixed_generated_at,
+        ):
+            return run_models_command(self.config, args)
+
     def render_to(self, path: Path) -> str:
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            self.assertEqual(0, run_models_command(self.config, self.args(html=str(path))))
+            self.assertEqual(0, self.run_models(self.args(html=str(path))))
         self.assertEqual(str(path.resolve()) + "\n", out.getvalue())
         return path.read_text(encoding="utf-8")
 
@@ -371,7 +387,7 @@ class ScoreboardPageTests(unittest.TestCase):
         out = io.StringIO()
         with mock.patch.object(ringer, "open_in_browser") as open_in_browser:
             with contextlib.redirect_stdout(out):
-                self.assertEqual(0, run_models_command(self.config, self.args(html=str(html_path), open=True)))
+                self.assertEqual(0, self.run_models(self.args(html=str(html_path), open=True)))
 
         self.assertEqual(str(html_path.resolve()) + "\n", out.getvalue())
         self.assertTrue(html_path.exists())
@@ -382,7 +398,7 @@ class ScoreboardPageTests(unittest.TestCase):
         out = io.StringIO()
         args = self.args(html="")
         with contextlib.redirect_stdout(out):
-            self.assertEqual(0, run_models_command(self.config, args))
+            self.assertEqual(0, self.run_models(args))
 
         live_path = artifact_live_path(self.config.state_dir, "model-scoreboard")
         self.assertEqual(str(live_path.resolve()) + "\n", out.getvalue())
