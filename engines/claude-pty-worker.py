@@ -161,6 +161,10 @@ def main(argv: list[str]) -> int:
         "--model",
         "sonnet",
     ]
+    # RINGER_CLAUDE_ADD_DIRS grants Claude read access to those dirs.
+    for add_dir in os.environ.get("RINGER_CLAUDE_ADD_DIRS", "").split(":"):
+        if add_dir and os.path.isdir(add_dir):
+            args.extend(["--add-dir", add_dir])
     if settings_path is not None:
         args.extend(["--settings", str(settings_path)])
     try:

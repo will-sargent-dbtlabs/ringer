@@ -53,6 +53,10 @@ def main(argv: list[str]) -> int:
         "--output-format",
         "text",
     ]
+    # RINGER_CLAUDE_ADD_DIRS grants Claude read access to those dirs.
+    for add_dir in os.environ.get("RINGER_CLAUDE_ADD_DIRS", "").split(":"):
+        if add_dir and os.path.isdir(add_dir):
+            args.extend(["--add-dir", add_dir])
     try:
         os.execvpe(claude_bin, args, env)
     except OSError as exc:
