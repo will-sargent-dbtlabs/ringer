@@ -105,6 +105,8 @@ Each task gets its own directory, its own worker, its own log, and its own verdi
 | `full_access` | Worker runs unsandboxed — required for workers that spawn their own sub-workers; must also be enabled in config |
 | `worktrees` (run-level) | Give each task an isolated git worktree of `repo` so parallel workers can't collide |
 
+For Codex, keep model selection explicit in each manifest and record it in run/eval state. Use **Luna** as the fast, affordable lane for bounded read-only review, docs, mechanical edits, and other low-risk tasks with strong checks. Use **Terra** as the balanced default for everyday code features, fixes, tests, and integrations. Reserve **Sol** for frontier-complex architecture, cross-system reasoning, high-risk work, or escalation after Terra evidence. `task_type` describes work for reporting; it does not automatically route models.
+
 > **Worktree footgun:** on PASS the task's worktree is removed — including anything written inside it. In worktrees mode, worker logs live outside task worktrees in `workdir/logs/`; have workers write deliverables outside the worktree too, or have your `check` copy artifacts out before it exits 0.
 
 Not sure what your tasks even are yet? [`docs/interview-prompt.md`](docs/interview-prompt.md) is a prompt you paste into any chatbot; it interviews you about the job and hands back a brief your orchestrating agent can turn into a manifest. Ready-made skeletons for the patterns that work live in [`templates/`](templates/).

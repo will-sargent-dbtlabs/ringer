@@ -38,6 +38,9 @@ jsonl_path = "~/.ringer/runs.jsonl"
 # Public default resolves this with shutil.which("codex"). Set an absolute path
 # here only for machine-specific installs.
 bin = "codex"
+model_default = "gpt-5.6-terra"
+# Select the model explicitly per task; gpt-5.6-luna is the fast affordable
+# lane for bounded work, while the default above keeps normal work balanced.
 
 # Placeholders:
 # - {taskdir}: task working directory
@@ -51,6 +54,8 @@ args_template = [
   "--skip-git-repo-check",
   "{access_args}",
   "{engine_args}",
+  "-m",
+  "{model}", # e.g. gpt-5.6-luna; choose explicitly per task
   "-C",
   "{taskdir}",
   "{spec}",

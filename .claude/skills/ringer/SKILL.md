@@ -180,6 +180,16 @@ Pattern-selection judgment:
 
 ## Engine selection
 
+Codex model selection is explicit in the manifest and is recorded in run/eval
+state; `task_type` does not automatically route models. Apply this cost-aware
+policy: Luna is the fast, affordable lane for bounded read-only review, docs,
+mechanical edits, and other low-risk tasks with strong checks; Terra is the
+balanced default for everyday code features, fixes, tests, and integrations;
+Sol is reserved for frontier-complex architecture, cross-system reasoning,
+high-risk work, or escalation after Terra evidence. For multi-task Codex runs,
+route eligible low-risk lanes to Luna, default other normal work to Terra, and
+require a concrete complexity reason before using Sol.
+
 **The engine choice belongs to the human — but the recommendation comes
 from THEIR evidence.** Before the FIRST run of a job: read what's wired up
 (`[engines.<name>]` blocks in `~/.config/ringer/config.toml`), run

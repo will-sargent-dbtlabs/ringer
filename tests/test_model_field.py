@@ -17,6 +17,7 @@ from ringer import (  # noqa: E402
     EvalConfig,
     Manifest,
     TaskSpec,
+    built_in_codex_engine,
     build_worker_command,
     load_engines,
     preflight_engine_bins,
@@ -57,6 +58,47 @@ def codex_like_engine() -> EngineConfig:
 
 
 class ModelPlaceholderTests(unittest.TestCase):
+    def test_built_in_codex_uses_terra_by_default(self) -> None:
+        engine = built_in_codex_engine()
+        cmd = build_worker_command(
+            engine,
+            taskdir=Path("/tmp/t"),
+            spec="do it",
+            full_access=False,
+            engine_args=("--reasoning", "high"),
+        )
+        self.assertEqual("gpt-5.6-terra", engine.model_default)
+        self.assertEqual("gpt-5.6-terra", cmd[cmd.index("-m") + 1])
+        self.assertEqual(
+            [
+                "exec",
+                "--skip-git-repo-check",
+                "--sandbox",
+                "workspace-write",
+                "--reasoning",
+                "high",
+                "-m",
+                "gpt-5.6-terra",
+                "-C",
+                "/tmp/t",
+                "do it",
+            ],
+            cmd[1:],
+        )
+
+    def test_built_in_codex_honors_luna_and_sol_model_overrides(self) -> None:
+        engine = built_in_codex_engine()
+        for model in ("gpt-5.6-luna", "gpt-5.6-sol"):
+            with self.subTest(model=model):
+                cmd = build_worker_command(
+                    engine,
+                    taskdir=Path("/tmp/t"),
+                    spec="do it",
+                    full_access=False,
+                    model=model,
+                )
+                self.assertEqual(model, cmd[cmd.index("-m") + 1])
+
     def test_model_default_fills_placeholder(self) -> None:
         cmd = build_worker_command(
             harness_engine(), taskdir=Path("/tmp/t"), spec="do it", full_access=False

@@ -283,6 +283,8 @@ def built_in_codex_engine() -> EngineConfig:
             "--skip-git-repo-check",
             "{access_args}",
             "{engine_args}",
+            "-m",
+            "{model}",
             "-C",
             "{taskdir}",
             "{spec}",
@@ -291,6 +293,7 @@ def built_in_codex_engine() -> EngineConfig:
         sandbox_args=("--sandbox", "workspace-write"),
         pty=False,
         token_regex=DEFAULT_TOKEN_REGEX,
+        model_default="gpt-5.6-terra",
     )
 
 

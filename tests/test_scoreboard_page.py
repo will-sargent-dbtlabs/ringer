@@ -287,7 +287,7 @@ class ScoreboardPageTests(unittest.TestCase):
         self.assertIn("openrouter/proven", html)
         self.assertIn("openrouter/probation", html)
         self.assertIn("openrouter/free:free", html)
-        self.assertIn('<div class="model-name">GPT-5.5</div><div class="model-id">codex</div>', html)
+        self.assertIn('<div class="model-name">GPT-5.6 Terra</div><div class="model-id">codex</div>', html)
         self.assertIn('<span class="tier-badge proven">proven</span>', html)
         self.assertIn('<span class="tier-badge probation">probation</span>', html)
         self.assertIn("n=20", html)
